@@ -1,17 +1,21 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <string.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
 //#include "conversion.h"
 
-
 #define WIDTH 60
 #define HEIGHT 60
 #define MARGIN 2
 #define RECTSIZE WIDTH-2*MARGIN
-#define UINT8MASK 0b11111111
+
+#define HEX 1
+#define RGB 2
+#define PREVIEW_BOX 16
+int colorMode; // bits : HEX RGB, bit at 1 if activated
 
 
 struct x11_data{
@@ -25,7 +29,6 @@ struct x11_data{
     XWindowChanges npos;
     int rooth, rootw;
 };
-
 
 void saveColor(int r, int g, int b);
 void getMousePosition(struct x11_data *, int *, int *, Window *);
@@ -47,6 +50,19 @@ static inline void setRootSize(struct x11_data * data){
     data->rooth = att.height;
 }
 
+void parseArgs(int argc, char ** argv) {
+    int index = 0;
+    while (index < argc) {
+        if (strcmp(argv[index], "--hex") == 0) {
+            index++;
+            colorMode |= HEX;
+        } else if (strcmp(argv[index], "--rgb") == 0) {
+            index++;
+            colorMode |= RGB;
+        }
+    }
+}
+
 int main(int argc, char ** argv) {
 
     printf("----------- Picolor-v0.1.0 -----------\n\n");
@@ -57,7 +73,11 @@ int main(int argc, char ** argv) {
         return EXIT_FAILURE;
     }
 
-    printf("Picker ON - Keyboard is now captured.\nPress ESC to close the picker.\nPress TAB to capture a color.\n\n");
+    // Parse arguments
+    if (argc == 1) colorMode = (HEX | PREVIEW_BOX);
+    else parseArgs(argc - 1, argv);
+
+    printf("Picker ON - Keyboard is now captured.\nPress ESC to close the picker.\nPress CTRL to capture a color.\n\n");
     XSetErrorHandler(_XlibErrorHandler);
     display_data.root = XRootWindow (display_data.display, XDefaultScreen (display_data.display));
     display_data.colormap = XDefaultColormap(display_data.display, XDefaultScreen (display_data.display));
@@ -100,12 +120,26 @@ void getMousePosition(struct x11_data * data, int * mx, int * my, Window * windo
 
 }
 
+void printHeader(){
+    if((colorMode & PREVIEW_BOX) == PREVIEW_BOX) printf("\u25A3  ");
+    if((colorMode & HEX) == HEX) printf("   HEX   \t");
+    if((colorMode & RGB) == RGB) printf("     RGB    \t");
+    printf("\n\n");
+}
+
+void printColor(int r, int g, int b){
+    if((colorMode & PREVIEW_BOX) == PREVIEW_BOX) printf("\x1b[38;2;%d;%d;%dm\u25A3\x1b[0m  ", r,g,b);
+    if((colorMode & HEX) == HEX) printf(" #%02X%02X%02X \t", r,g,b);
+    if((colorMode & RGB) == RGB) printf(" %3d %3d %3d \t", r,g,b);
+    printf("\n");
+}
+
 void saveColor(int r, int g, int b){
     // Print color
     static unsigned int nb_saved = 0;
-    if(nb_saved==0)printf("\u25A3     HEX   \t     RGB\n\n");
-    int hex = (b & UINT8MASK) + ((g & UINT8MASK) << 8) + ((r & UINT8MASK) << 16);
-    printf("\x1b[38;2;%d;%d;%dm\u25A3\x1b[0m   #%06X \t %3d %3d %3d\n", r, g, b, hex, r, g, b);
+    if(nb_saved==0) printHeader();
+    printColor(r, g, b);
+    //printf("\x1b[38;2;%d;%d;%dm\u25A3\x1b[0m   #%02X%02X%02X \t %3d %3d %3d\n", r, g, b, r, g, b, r, g, b);
     nb_saved++;
 }
 
@@ -133,29 +167,38 @@ void loopWindow(struct x11_data * data) {
     Window window_returned;
     int revert;
     unsigned int i=0;
-    int x,y;
+    int x,y, lbuf = 4;
+    KeySym key;
+    char buf[lbuf];
 
     while (i++<2000) { // Last max ~ 1 min (Avoids bugs issues)
 
         // Get cursor position and pixel color
         getMousePosition(data, &data->npos.x, &data->npos.y, &window_returned);
 
-        // Make sure window has input focus
+        // Get input
         XGetInputFocus(data->display,&window_returned,&revert);
+        XSelectInput(data->display, window_returned, KeyPressMask);
+
+        /*
+         *      // Make sure window has input focus
         if(&window_returned != &data->vue){
             XSetInputFocus(data->display,data->vue,RevertToParent,CurrentTime);
         }
+         */
 
-        // Check if key was pressed
+
+        // Check if key was pressed without waiting
         if (XCheckMaskEvent(data->display, KeyPressMask, &ev)) {
 
+            // Check pressed key
+            XLookupString(&ev.xkey, buf, lbuf, &key, NULL);
             // Exit on ESC key press
-            if (ev.xkey.keycode == 0x09) break;
-            else if(ev.xkey.keycode == 23){   // TAB key press
+            if (key == XK_Escape) break;
+            else if (key == XK_Control_L || key == XK_Control_R) {   // CTL key press
                 // Handle selected color
-                saveColor( data->c.red / 256, data->c.green / 256, data->c.blue / 256);
+                saveColor(data->c.red / 256, data->c.green / 256, data->c.blue / 256);
             }
-          //  else { XSendEvent(data->display, PointerWindow, False, KeyPressMask, &ev); }
 
         }
 

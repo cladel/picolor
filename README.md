@@ -19,9 +19,8 @@ $ picolor
 
 Picker ON - Keyboard is now captured.
 Press ESC to close the picker.
-Press TAB to capture a color.
+Press CTRL to capture a color.
+
 ```
 
-⚠ Keyboard input will be captured until `ESC` is pressed or 1 minute has passed, but you can still navigate with your mouse.
-
-When pressing `TAB`, the current pixel color (hex and rgb value) will be printed to the standard output.
+When pressing `CTRL`, the current pixel color (hex and rgb value) will be printed to the standard output.
